@@ -45,7 +45,13 @@ list_servers() {
     for config in "$CONFIGS_DIR"/*.ovpn; do
         if [ -f "$config" ]; then
             server_name=$(basename "$config" .ovpn)
-            echo "  👉 $server_name"
+            # We show a short name if the file has a long name.
+            short_name=$(echo "$server_name" | cut -d'.' -f1)
+            if [ "$short_name" != "$server_name" ]; then
+                echo "  👉 $short_name (full: $server_name)"
+            else
+                echo "  👉 $server_name"
+            fi
         fi
     done
 }
@@ -85,21 +91,41 @@ add_config() {
 # Connecting to a VPN
 connect_vpn() {
     local server_name="$1"
-    local config_file="$CONFIGS_DIR/$server_name.ovpn"
+    local config_file
     
-    if [ ! -f "$config_file" ]; then
-        echo -e "${RED}⚠️  Server '$server_name' not found!${NC}"
-        list_servers
-        return 1
+    # Search for a configuration file
+    if [ -f "$CONFIGS_DIR/$server_name.ovpn" ]; then
+        config_file="$CONFIGS_DIR/$server_name.ovpn"
+    else
+        # Search for files containing the server name
+        local matches=($(find "$CONFIGS_DIR" -name "*$server_name*.ovpn" -type f))
+        
+        if [ ${#matches[@]} -eq 1 ]; then
+            config_file="${matches[0]}"
+            server_name=$(basename "$config_file" .ovpn)
+            echo -e "${YELLOW}Using config: $server_name${NC}"
+        elif [ ${#matches[@]} -eq 0 ]; then
+            echo -e "${RED}❌ Server '$server_name' not found!${NC}"
+            list_servers
+            return 1
+        else
+            echo -e "${YELLOW}Multiple configs found for '$server_name':${NC}"
+            for match in "${matches[@]}"; do
+                local name=$(basename "$match" .ovpn)
+                echo "  👉 $name"
+            done
+            echo -e "${YELLOW}Please specify exact server name.${NC}"
+            return 1
+        fi
     fi
     
     if [ ! -f "$AUTH_FILE" ]; then
-        echo -e "${YELLOW}Credentials are not configured${NC}"
+        echo -e "${YELLOW}Authentication credentials not set up${NC}"
         setup_auth
     fi
     
     echo -e "${GREEN}🔌 Connecting to $server_name...${NC}"
-    echo -e "${YELLOW}To disable it, press Ctrl+C${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to disconnect${NC}"
     echo ""
     
     # Creating a temporary file for authentication
