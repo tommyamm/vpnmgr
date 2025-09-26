@@ -23,6 +23,7 @@ show_help() {
     echo "  vpn [SERVER]          - connect to the specified server"
     echo "  vpn -l, --list        - list of available servers"
     echo "  vpn -a, --add         - add a new config"
+    echo "  vpn -d, --delete      - delete a config"
     echo "  vpn -s, --setup-auth  - set up credentials"
     echo "  vpn -h, --help        - show this help"
 }
@@ -86,6 +87,64 @@ add_config() {
     cp "$config_path" "$CONFIGS_DIR/$server_name.ovpn"
     
     echo -e "${GREEN}✓ Configuration '$server_name' added${NC}"
+}
+
+# Deleting a config
+delete_config() {
+    check_configs || return 1
+    
+    echo -e "${YELLOW}Deleting a VPN config${NC}"
+    
+    # If the server name is passed as an argument
+    if [ -n "$1" ]; then
+        local server_name="$1"
+        local config_file="$CONFIGS_DIR/$server_name.ovpn"
+        
+        if [ -f "$config_file" ]; then
+            rm -f "$config_file"
+            echo -e "${GREEN}✓ Configuration '$server_name' deleted${NC}"
+            return 0
+        else
+            echo -e "${RED}⚠️  Config '$server_name' not found!${NC}"
+            return 1
+        fi
+    fi
+    
+    # Interactive mode
+    echo -e "${BLUE}Select the config to delete:${NC}"
+    
+    local configs=()
+    local i=1
+    
+    # Collecting a list of configs
+    for config in "$CONFIGS_DIR"/*.ovpn; do
+        if [ -f "$config" ]; then
+            server_name=$(basename "$config" .ovpn)
+            configs[i]="$server_name"
+            echo "  $i) $server_name"
+            ((i++))
+        fi
+    done
+    
+    echo ""
+    read -p "Enter the config number: " choice
+    
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
+        local selected_config="${configs[choice]}"
+        local config_file="$CONFIGS_DIR/$selected_config.ovpn"
+        
+        # Confirm deletion
+        read -p "Are you sure you want to delete '$selected_config'? (y/N): " confirm
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            rm -f "$config_file"
+            echo -e "${GREEN}✓ Configuration '$selected_config' deleted${NC}"
+        else
+            echo -e "${YELLOW}Deletion cancelled${NC}"
+        fi
+    else
+        echo -e "${RED}⚠️  Wrong choice!${NC}"
+        return 1
+    fi
 }
 
 # Connecting to a VPN
@@ -179,6 +238,9 @@ main() {
         -a|--add)
             add_config
             ;;
+        -d|--delete)
+            delete_config "$2"
+            ;;
         -s|--setup-auth)
             setup_auth
             ;;
@@ -199,7 +261,7 @@ main() {
 # Signal processing for graceful shutdown
 trap 'echo -e "\n${YELLOW}Disabling the VPN...${NC}"; exit 0' SIGINT SIGTERM
 
-if [ "$#" -gt 1 ]; then
+if [ "$#" -gt 2 ]; then
     echo -e "${RED}⚠️  There are too many arguments!${NC}"
     show_help
     exit 1
